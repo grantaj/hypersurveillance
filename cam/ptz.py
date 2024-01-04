@@ -23,7 +23,7 @@ class CameraControl:
         Returns:
             Return the ptz service object and media service object
         """
-        mycam = ONVIFCamera(self.__cam_ip, self.__cam_port, self.__cam_user, self.__cam_password)  ## Some cameras use port 8080
+        mycam = ONVIFCamera(self.__cam_ip, self.__cam_port, self.__cam_user, self.__cam_password, '/home/alex/python-onvif-zeep/wsdl/')  ## Some cameras use port 8080
         logging.info('Create media service object')
         media = mycam.create_media_service()
         logging.info('Create ptz service object')
