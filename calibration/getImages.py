@@ -9,7 +9,7 @@ directory
 import cv2
 import numpy as np
 import math
-from time import time
+from time import sleep, time
 from datetime import datetime
 
 
@@ -75,6 +75,8 @@ period_seconds = 1
 num_frames = 0
 t_seconds = time()
 
+sleep(10)
+
 # Open all of the available webcams
 cap_objects = []
 cams = available_webcams()
@@ -83,7 +85,10 @@ for cam in cams:
     if not cap.isOpened():
         print("Error: could not open webcam{cam}")
     else:
+        # cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        # cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         cap_objects.append(cap)
+
 
 
 # Main loop: capture frames from each of the webcams
@@ -111,9 +116,9 @@ while num_frames < total_frames:
         cam_index = 0
         for img in img_list:
             cam_index += 1
-            filename = f"images/cam_{cam_index}_frame_{num_frames}"
-            filename = generate_timestamped_filename(filename,
-                                                     image_format)
+            filename = f"images/cam_{cam_index}_frame_{num_frames}.png"
+            #filename = generate_timestamped_filename(filename,
+            #                                         image_format)
             cv2.imwrite(filename, img)
             print(filename)
 
