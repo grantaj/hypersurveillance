@@ -1,126 +1,145 @@
+"""
+Perform calibration.
+
+Generate translation, rotation and camera matrix
+for each of the cameras.
+Capture images using getImages.py
+"""
+
 import numpy as np
-import cv2 as cv
-import glob
+import cv2
+import re
+import os
 import pickle
 
 
+def compute_camera_world_position(rotation_vector, translation_vector):
+    """Compute the world coordinates of a camera given its
+    rotation and translation vectors.
 
-################ FIND CHESSBOARD CORNERS - OBJECT POINTS AND IMAGE POINTS #############################
+    This function converts a rotation vector into a rotation matrix
+    and combines it with the translation vector to form the camera's
+    extrinsic matrix. It then inverts this matrix to transform from
+    camera coordinates to world coordinates, thus computing the
+    camera's position in the world.
 
-chessboardSize = (8,6)
-frameSize = (640,480)
+    Parameters:
+    rotation_vector (numpy.ndarray): A 3x1 vector
+    representing the rotation of the camera in axis-angle format. This
+    is typically obtained from camera calibration (e.g.,
+    cv2.solvePnP).  translation_vector (numpy.ndarray): A 3x1 vector
+    representing the translation of the camera. This is also typically
+    obtained from camera calibration.
+
+    Returns:
+    numpy.ndarray: A 3-element vector representing the
+    camera's position in world coordinates.
+
+    """
+
+    # Convert the rotation vector to a rotation matrix
+    rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
+
+    # Invert the rotation matrix (R is orthogonal, so inv is transpose)
+    rotation_matrix_inv = rotation_matrix.T
+
+    # Apply the inverted rotation to the translation vector
+    camera_position_world = -rotation_matrix_inv @ translation_vector
+
+    return camera_position_world.ravel()
 
 
+def read_images_from_directory(directory):
+    images = {}
+    pattern = re.compile(r'cam_(\d+)_frame_(\d+)\.png')
+
+    for filename in sorted(os.listdir(directory)):
+        if filename.endswith('.png'):
+            match = pattern.match(filename)
+            if match:
+                cam_index, frame_index = map(int, match.groups())
+                if cam_index not in images:
+                    images[cam_index] = {}
+                image_path = os.path.join(directory, filename)
+                images[cam_index][frame_index] = cv2.imread(image_path)
+
+    return images
+
+
+# System parameters
+# Calibration image (chessboard)
+# For a m x n chessboard the parameters here need to me (m-1)x(n-1)
+chessboardSize = (8, 6)
+size_of_chessboard_squares_mm = 40
+
+# image frame size in pixels (currently assuming all images the same size)
+frameSize = (640, 480)
 
 # termination criteria
-criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
-
-# prepare object points, like (0,0,0), (1,0,0), (2,0,0) ....,(6,5,0)
+# These are the coordinates of the chessboard corners in mm relative to
+# an origin at the top left of the chessboard
 objp = np.zeros((chessboardSize[0] * chessboardSize[1], 3), np.float32)
-objp[:,:2] = np.mgrid[0:chessboardSize[0],0:chessboardSize[1]].T.reshape(-1,2)
-
-size_of_chessboard_squares_mm = 40
+objp[:, :2] = np.mgrid[0:chessboardSize[0], 0:chessboardSize[1]].T.reshape(-1, 2)
 objp = objp * size_of_chessboard_squares_mm
 
-# Arrays to store object points and image points from all the images.
-objpoints = [] # 3d point in real world space
-imgpoints = [] # 2d points in image plane.
 
+images = read_images_from_directory('images')
 
-images = glob.glob('images/*.png')
+for cam_index in images:
+    goodFrames = []
+    camName = f"camera_{cam_index}"
 
-goodImages = []
+    # Arrays to store object points and image points from all the images.
+    objpoints = []  # 3d point in real world space
+    imgpoints = []  # 2d points in image plane.
 
-for image in images:
+    for frame_index in images[cam_index]:
+        img = images[cam_index][frame_index]
+        frameName = f"camera {cam_index} frame {frame_index}"
+        print('Processing ' + frameName)
 
-    img = cv.imread(image)
-    gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # Find the chess board corners
-    ret, corners = cv.findChessboardCorners(gray, chessboardSize, None)
+        # Find the chess board corners
+        ret, corners = cv2.findChessboardCorners(gray, chessboardSize, None)
 
-    # If found, add object points, image points (after refining them)
-    if ret is True:
+        # If found, add object points, image points (after refining them)
+        if ret is True:
 
-        goodImages.append(image)
+            goodFrames.append(frameName)
 
-        objpoints.append(objp)
-        corners2 = cv.cornerSubPix(gray, corners, (11,11), (-1,-1), criteria)
-        imgpoints.append(corners)
+            objpoints.append(objp)
+            corners2 = cv2.cornerSubPix(gray, corners,
+                                        (11, 11), (-1, -1),
+                                        criteria)
+            imgpoints.append(corners2)
 
-        # Draw and display the corners
-        cv.drawChessboardCorners(img, chessboardSize, corners2, ret)
-        cv.imshow('img', img)
-        cv.waitKey(1000)
+            # Draw and display the corners
+            cv2.drawChessboardCorners(img, chessboardSize, corners2, ret)
+            cv2.imshow(frameName, img)
+            cv2.waitKey(100)
 
-    else:
+        else:
 
-        print(image, "skipped")
+            print(frameName, "skipped")
 
-cv.destroyAllWindows()
+    cv2.destroyAllWindows()
 
+    # Calibration -------------------------------------------------------------
 
-############## CALIBRATION #######################################################
+    ret, cameraMatrix, dist, rvecs, tvecs, newObjPoints = cv2.calibrateCameraRO(
+        objpoints, imgpoints, frameSize, int(chessboardSize[0]-1), None, None)
 
-ret, cameraMatrix, dist, rvecs, tvecs = cv.calibrateCamera(objpoints, imgpoints, frameSize, None, None)
+    # Save the camera calibration result for later use. -----------------------
 
-# Save the camera calibration result for later use 
-pickle.dump((rvecs, tvecs), open("transformation.pkl", "wb"))
-pickle.dump((cameraMatrix, dist), open("calibration.pkl", "wb"))
-pickle.dump(cameraMatrix, open("cameraMatrix.pkl", "wb"))
-pickle.dump(dist, open("dist.pkl", "wb"))
+    pickle.dump((rvecs, tvecs), open(camName + "_transformation.pkl", "wb"))
+    pickle.dump((cameraMatrix, dist), open(camName + "_calibration.pkl", "wb"))
+    pickle.dump(cameraMatrix, open(camName + "_cameraMatrix.pkl", "wb"))
+    pickle.dump(dist, open(camName + "_dist.pkl", "wb"))
 
-
-############## UNDISTORTION #####################################################
-
-img = cv.imread(images[1])
-h,  w = img.shape[:2]
-newCameraMatrix, roi = cv.getOptimalNewCameraMatrix(cameraMatrix, dist, (w,h), 1, (w,h))
-
-
-
-# Undistort
-dst = cv.undistort(img, cameraMatrix, dist, None, newCameraMatrix)
-
-# crop the image
-x, y, w, h = roi
-dst = dst[y:y+h, x:x+w]
-cv.imwrite('caliResult1.png', dst)
-
-cv.imshow('undistort', dst)
-
-# Undistort with Remapping
-mapx, mapy = cv.initUndistortRectifyMap(cameraMatrix, dist, None, newCameraMatrix, (w,h), 5)
-dst = cv.remap(img, mapx, mapy, cv.INTER_LINEAR)
-
-# crop the image
-x, y, w, h = roi
-dst2 = dst[y:y+h, x:x+w]
-cv.imwrite('caliResult2.png', dst2)
-
-cv.imshow('remapping', dst2)
-
-
-# Reprojection Error
-mean_error = 0
-
-for i in range(len(objpoints)):
-    imgpoints2, _ = cv.projectPoints(objpoints[i], rvecs[i], tvecs[i], cameraMatrix, dist)
-    error = cv.norm(imgpoints[i], imgpoints2, cv.NORM_L2)/len(imgpoints2)
-    mean_error += error
-
-print( "total error: {}".format(mean_error/len(objpoints)) )
-
-cv.waitKey(10000)
-cv.destroyAllWindows()
-
-index = 0
-for image in goodImages:
-    img = cv.imread(image)
-    cv.imshow('image', img)
-    print(tvecs[index])
-    #print(rvecs[index])
-    index = index+1
-    cv.waitKey(10000)
-
+    for R, t, frameName in zip(rvecs, tvecs, goodFrames):
+        camera_position_world = compute_camera_world_position(R, t)
+        d = np.linalg.norm(camera_position_world)
+        print(frameName + " - Distance from camera: %5.0f mm" % d)
