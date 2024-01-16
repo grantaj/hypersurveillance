@@ -1,0 +1,36 @@
+\documentclass{article}
+
+\usepackage{amsmath}
+
+\title{World coordinates from OpenCV camera calibration}
+\author{Alex Grant}
+\date{16 January 2024}
+
+
+
+\begin{document}
+
+\maketitle
+
+\section{Calibration}
+
+The OpenCV \texttt{cameraCalibration} function (and pose estimation, \texttt{solvePnP}) return a rotation vector $r$ and translation vector $t$. These specify the change of coordinates from the coordinate system of the calibration target to that of the camera.
+
+The rotation vector is an encoding of the $3\times 3$ rotation matrix, which can be recovered via
+\begin{verbatim}
+R = cv2.Rodrigues(r)
+\end{verbatim}
+Rotation matrices are orthogonal, i.e. $R^t R = I$ and hence $R^{-1} = R^t$. Thus the coordinates of the camera in the basis of the calibration taget (where $(0,0,0)$ is the planar calibration target aligned with the $z$-axis) are
+\begin{equation*}
+  -R^t t
+\end{equation*}
+
+Now consider multiple cameras, with rotation matrices $R_i$ and translation vectors $t_i$, $i=0,1,\dots$ where calibration has been performed for each of them based on images taken of the same calibration target.
+
+We can find the relative position $v$ of camera $i$ with respect to camera $0$ (for example) as follows:
+\begin{equation*}
+  v = R_0^t t_0 - R_i^t t_i
+\end{equation*}
+This works by transforming from camera $0$ to the calibration target, and from there to camera $i$.
+
+\end{document}
