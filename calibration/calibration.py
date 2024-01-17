@@ -14,8 +14,7 @@ import pickle
 
 
 def compute_camera_world_position(rotation_vector, translation_vector):
-    """Compute the world coordinates of a camera given its
-    rotation and translation vectors.
+    """Compute world coordinates a camera.
 
     This function converts a rotation vector into a rotation matrix
     and combines it with the translation vector to form the camera's
@@ -34,9 +33,8 @@ def compute_camera_world_position(rotation_vector, translation_vector):
     Returns:
     numpy.ndarray: A 3-element vector representing the
     camera's position in world coordinates.
-
     """
-
+    #
     # Convert the rotation vector to a rotation matrix
     rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
 

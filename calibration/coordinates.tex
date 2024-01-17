@@ -20,6 +20,17 @@ The rotation vector is an encoding of the $3\times 3$ rotation matrix, which can
 \begin{verbatim}
 R = cv2.Rodrigues(r)
 \end{verbatim}
+
+Let $p$ be a point in world coordinates, then this point in camera coordinates is given by
+\begin{equation}
+  \label{eq:camera-coords}
+  q = Rp+t
+\end{equation}
+As a corollary, we can find the position $p_0$ of the camera origin in world coordinates, solving~\eqref{eq:camera-coords} with $q=0$,
+\begin{equation*}
+  Rp_0 + t = 0
+\end{equation*}
+threrefore $p_0 = -R^{-1}t$.
 Rotation matrices are orthogonal, i.e. $R^t R = I$ and hence $R^{-1} = R^t$. Thus the coordinates of the camera in the basis of the calibration taget (where $(0,0,0)$ is the planar calibration target aligned with the $z$-axis) are
 \begin{equation*}
   -R^t t
@@ -27,10 +38,12 @@ Rotation matrices are orthogonal, i.e. $R^t R = I$ and hence $R^{-1} = R^t$. Thu
 
 Now consider multiple cameras, with rotation matrices $R_i$ and translation vectors $t_i$, $i=0,1,\dots$ where calibration has been performed for each of them based on images taken of the same calibration target.
 
-We can find the relative position $v$ of camera $i$ with respect to camera $0$ (for example) as follows:
+We can find the relative position $v$ of camera $i$ with respect to camera $0$ (expressed in the world coordinate basis) as follows:
 \begin{equation*}
-  v = R_0^t t_0 - R_i^t t_i
+  v_i = R_0^t t_0 - R_i^t t_i
 \end{equation*}
-This works by transforming from camera $0$ to the calibration target, and from there to camera $i$.
+
+If we want this in the camera 0 basis, we can transform the position of camera $i$ in world coordinates, $-R_i^t t_i$ using~\eqref{eq:camera-coords} to obtain $-R_0 R_i^t t_i +t_0$.
+
 
 \end{document}
