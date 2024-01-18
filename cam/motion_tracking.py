@@ -8,6 +8,9 @@ import pytz
 import requests
 import math
 import numpy as np
+import pickle
+import face as facerecog
+
 # from pythonosc import osc_message_builder
 # from pythonosc import udp_client
 
@@ -188,6 +191,7 @@ def opencv_debug_overlay(frame:np.ndarray, face_count:int, face:Face):
 
 
 
+
 def main(mode):
 
     if mode == MODE_CAMERA:
@@ -205,6 +209,24 @@ def main(mode):
 
     # Load the pre-trained face cascade
     face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+
+    # Load the known face encodings
+    (known_face_encodings, known_face_names) = pickle.load(open("faces.pkl", "rb"))
+    image_scale_down = 1
+
+    # Style options
+    colourmap = {
+        "red": (0, 0, 255),
+        "green": (0, 255, 0),
+        "blue": (255, 0, 0),
+        "yellow": (0, 255, 255),
+        "white": (255, 255, 255),
+        "black": (0, 0, 0),
+    }
+
+    box_colour = colourmap["red"]
+    text_colour = colourmap["white"]
+    font = cv2.FONT_HERSHEY_DUPLEX
 
     # Limit frame rates (adjust as needed)
     face_detection_fps = 6
@@ -242,7 +264,10 @@ def main(mode):
             # calculate vector length between centre of face and centre of screen
             delta_length = math.sqrt(face.normalised_x**2 + face.normalised_y**2)
 
-
+            face_locations, face_names = facerecog.find_faces(frame,
+                                                              known_face_encodings,
+                                                              known_face_names,
+                                                              image_scale_down)
         ##########
         # INTERRUP MOVE COMMAND
         # TODO some sort of rate limited on the stop command
@@ -269,6 +294,16 @@ def main(mode):
         
         opencv_debug_overlay(frame, face_count, face)
 
+        for (top, right, bottom, left), name in zip(face_locations, face_names):
+            # Draw a box around the face
+            cv2.rectangle(frame, (left, top), (right, bottom), box_colour, 2)
+
+            # Draw a label with a name below the face
+            cv2.rectangle(frame, (left, bottom - 35), (right, bottom),
+                          box_colour, cv2.FILLED)
+            cv2.putText(frame, name, (left + 6, bottom - 6), font, 1,
+                        text_colour, 1)
+
         # Display the frame
         cv2.imshow('Webcam', frame)  
         
@@ -283,7 +318,7 @@ def main(mode):
     cap.release()
     cv2.destroyAllWindows()
 
-main(MODE_STREAM)
+main(MODE_CAMERA)
     
 # HELPFUL OSC CODE FOR FUTURE
 # Set up OSC client
