@@ -128,7 +128,22 @@ class Face:
         self.face_centre_y : float = 0
         self.normalised_x : float = 0
         self.normalised_y : float = 0
+        self.delta_length : float = 0
         pass
+
+    def normalise(self, frame):
+        self.face_centre_x = (self.x + (self.w/2)) / frame.shape[1]
+        self.face_centre_y = (self.y + (self.h/2)) / frame.shape[0]
+        self.normalised_x = (self.face_centre_x - 0.5) * 2
+        self.normalised_y = -(self.face_centre_y - 0.5) * 2
+        self.delta_length = math.sqrt(self.normalised_x**2 +
+                                      self.normalised_y**2)
+
+    def setFromTRBL(self, top, right, bottom, left):
+        self.x = left
+        self.y = bottom
+        self.w = right - left
+        self.h = top - bottom
 
 
 def face_detection(frame:np.ndarray, face_cascade:cv2.CascadeClassifier , face:Face) -> int:
@@ -155,14 +170,15 @@ def face_detection(frame:np.ndarray, face_cascade:cv2.CascadeClassifier , face:F
         face.y = faces[0][1]
         face.w = faces[0][2]
         face.h = faces[0][3]
-        
-        # normalise for centre of face
-        face.face_centre_x = (face.x + (face.w/2)) / frame.shape[1]  # Divide by width
-        face.face_centre_y = (face.y + (face.h/2)) / frame.shape[0]  # Divide by height
 
-        # normalise for camera coords
-        face.normalised_x = (face.face_centre_x - 0.5) * 2
-        face.normalised_y = -(face.face_centre_y - 0.5) * 2
+        face.normalise(frame)
+        # # normalise for centre of face
+        # face.face_centre_x = (face.x + (face.w/2)) / frame.shape[1]  # Divide by width
+        # face.face_centre_y = (face.y + (face.h/2)) / frame.shape[0]  # Divide by height
+
+        # # normalise for camera coords
+        # face.normalised_x = (face.face_centre_x - 0.5) * 2
+        # face.normalised_y = -(face.face_centre_y - 0.5) * 2
 
     return len(faces)
 
@@ -176,6 +192,7 @@ def opencv_debug_overlay(frame:np.ndarray, face_count:int, face:Face):
         face (Face): face object
     """
     # Display amount of faces found
+            
     face_message = 'Faces found ' + str(face_count)
     cv2.putText(frame, face_message, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)   
 
@@ -189,7 +206,26 @@ def opencv_debug_overlay(frame:np.ndarray, face_count:int, face:Face):
         coor_str = f"x: {str(round(face.normalised_x,2))} y: {str(round(face.normalised_y,2))}"
         cv2.putText(frame, coor_str, (face.x, face.y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
+        
+def face_overlay(frame, face_locations, face_names, target):
 
+    text_colour = (255, 255, 255)
+    font = cv2.FONT_HERSHEY_DUPLEX
+
+    for (top, right, bottom, left), name in zip(face_locations, face_names):
+        if name == target:
+            box_colour = (0, 0, 255)
+        else:
+            box_colour = (0, 255, 0)
+
+        # Draw a box around the face
+        cv2.rectangle(frame, (left, top), (right, bottom), box_colour, 2)
+
+        # Draw a label with a name below the face
+        cv2.rectangle(frame, (left, bottom - 35), (right, bottom),
+                      box_colour, cv2.FILLED)
+        cv2.putText(frame, name, (left + 6, bottom - 6), font, 1,
+                    text_colour, 1)
 
 
 def main(mode):
@@ -213,29 +249,13 @@ def main(mode):
     # Load the known face encodings
     (known_face_encodings, known_face_names) = pickle.load(open("faces.pkl", "rb"))
     image_scale_down = 1
-
-    # Style options
-    colourmap = {
-        "red": (0, 0, 255),
-        "green": (0, 255, 0),
-        "blue": (255, 0, 0),
-        "yellow": (0, 255, 255),
-        "white": (255, 255, 255),
-        "black": (0, 0, 0),
-    }
-
-    box_colour = colourmap["red"]
-    text_colour = colourmap["white"]
-    font = cv2.FONT_HERSHEY_DUPLEX
+    target = "Fraz"
 
     # Limit frame rates (adjust as needed)
-    face_detection_fps = 6
+    face_detection_fps = 4
     face_detection_fps_prev = 0.0
     send_command_fps = 1
     send_command_fps_prev = 0.0
-
-    # vector length between centre of face and centre of screen
-    delta_length = 0.0
 
     # theshold of face movement before sending move command (adjust as needed)
     delta_length_threshold = 0.2
@@ -259,53 +279,57 @@ def main(mode):
         if face_detection_time_elapsed > 1.0/face_detection_fps:
             
             # reset face detection timer
-            face_detection_fps_prev = time.time()
+            #face_detection_fps_prev = time.time()
 
-            face_count = face_detection(frame, face_cascade, face)
+            #face_count = face_detection(frame, face_cascade, face)
             
             # calculate vector length between centre of face and centre of screen
-            delta_length = math.sqrt(face.normalised_x**2 + face.normalised_y**2)
-
+           
             face_locations, face_names = facerecog.find_faces(frame,
                                                               known_face_encodings,
                                                               known_face_names,
                                                               image_scale_down)
-        ##########
-        # STOP COMMAND
-        if delta_length < delta_length_threshold:
+            face_count = len(face_locations)
             
-            # issue stop command
-            if is_camera_moving:
-                print('stop command')
-                onvif_stop()
-                is_camera_moving = False
+            try:
+                face_index = face_names.index(target)
+                (top, right, bottom, left) = face_locations[face_index]
+                face.setFromTRBL(top, right, bottom, left)
+                face.normalise(frame)
+                targetFound = True
 
-        ##########
-        # MOVE COMMAND
-        if send_command_time_elapsed> 1.0/send_command_fps:
-            
-            # reset send command timer
-            send_command_fps_prev = time.time()
+            except ValueError:
+                targetFound = False
 
-            if delta_length > delta_length_threshold:
-                is_camera_moving = True
+        if False:
+            ##########
+            # STOP COMMAND
+            # TODO - only stop if the target is not found for a given time
+            if face.delta_length < delta_length_threshold or targetFound is False:
 
-                # issue move command with speed proportional to delta_length
-                print(f'move command {round(face.normalised_x * delta_length,2)} {round(face.normalised_y * delta_length,2)}')
-                onvif_continuous_move(face.normalised_x * delta_length, face.normalised_y * delta_length, 0)
-            
-        
-        opencv_debug_overlay(frame, face_count, face)
+                # issue stop command
+                if is_camera_moving:
+                    print('stop command')
+                    onvif_stop()
+                    is_camera_moving = False
 
-        for (top, right, bottom, left), name in zip(face_locations, face_names):
-            # Draw a box around the face
-            cv2.rectangle(frame, (left, top), (right, bottom), box_colour, 2)
+            ##########
+            # MOVE COMMAND
+            if send_command_time_elapsed> 1.0/send_command_fps:
 
-            # Draw a label with a name below the face
-            cv2.rectangle(frame, (left, bottom - 35), (right, bottom),
-                          box_colour, cv2.FILLED)
-            cv2.putText(frame, name, (left + 6, bottom - 6), font, 1,
-                        text_colour, 1)
+                # reset send command timer
+                send_command_fps_prev = time.time()
+
+                if face.delta_length > delta_length_threshold:
+                    is_camera_moving = True
+
+                    # issue move command with speed proportional to delta_length
+                    print(f'move command {round(face.normalised_x * face.delta_length,2)} {round(face.normalised_y * face.delta_length,2)}')
+                    onvif_continuous_move(face.normalised_x * face.delta_length, face.normalised_y * face.delta_length, 0)
+
+        face_overlay(frame, face_locations, face_names, target)
+
+        #opencv_debug_overlay(frame, face_count, face)
 
         # Display the frame
         cv2.imshow('Webcam', frame)  
@@ -321,7 +345,7 @@ def main(mode):
     cap.release()
     cv2.destroyAllWindows()
 
-main(MODE_CAMERA)
+main(MODE_STREAM)
     
 # HELPFUL OSC CODE FOR FUTURE
 # Set up OSC client
