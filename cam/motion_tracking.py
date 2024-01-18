@@ -243,6 +243,8 @@ def main(mode):
     face_count = 0
     face = Face()
 
+    is_camera_moving = False
+
     while True:
         # check timers
         face_detection_time_elapsed = time.time() - face_detection_fps_prev
@@ -269,15 +271,14 @@ def main(mode):
                                                               known_face_names,
                                                               image_scale_down)
         ##########
-        # INTERRUP MOVE COMMAND
-        # TODO some sort of rate limited on the stop command
+        # STOP COMMAND
         if delta_length < delta_length_threshold:
+            
             # issue stop command
-            print('stop command')
-            onvif_stop()
-
-            # reset send command timer
-            send_command_fps_prev = time.time()
+            if is_camera_moving:
+                print('stop command')
+                onvif_stop()
+                is_camera_moving = False
 
         ##########
         # MOVE COMMAND
@@ -287,6 +288,8 @@ def main(mode):
             send_command_fps_prev = time.time()
 
             if delta_length > delta_length_threshold:
+                is_camera_moving = True
+
                 # issue move command with speed proportional to delta_length
                 print(f'move command {round(face.normalised_x * delta_length,2)} {round(face.normalised_y * delta_length,2)}')
                 onvif_continuous_move(face.normalised_x * delta_length, face.normalised_y * delta_length, 0)
