@@ -1,29 +1,66 @@
+"""
+Example of face recognition from webcam.
+
+Press q to quit
+
+This is based on the face_recognition_from_webcam_faster.py example
+in  https://github.com/ageitgey/face_recognition
+"""
 import cv2
 import pickle
 import face
 
-# Initialize variables
-process_this_frame = 0
-frame_rate = 4
-image_scale_down = 1
-image_scale_up = 1
+# Initialize variables --------------------------------------------------------
+# index zero is probably the built in webcam
+# or replace with a url to a video stream
+webcam_index = 0
 
+# Only process frame numbers which are 0 modulo the frame_rate
+# e.g. if frame_rate = 4, will process every fourth frame
+frame_rate = 4
+
+# For faster recognition, scale the images down by this factor
+image_scale_down = .5
+
+# If True, build the known face encodings from the array of images
 generate_database = False
 
-if generate_database is True:
-    files = [
-        "obama.jpg",
-        "biden.jpg",
-        "alex.jpg",
-        "fraz.jpg"
-    ]
+# Image filenames and associated people names for building the
+# known face encodings database.
+files = [
+    "obama.jpg",
+    "biden.jpg",
+    "alex.jpg",
+    "fraz.jpg"
+]
 
-    known_face_names = [
-        "Obama",
-        "Biden",
-        "Alex",
-        "Fraz"
-    ]
+known_face_names = [
+    "Obama",
+    "Biden",
+    "Alex",
+    "Fraz"
+]
+
+# Style options
+colourmap = {
+    "red": (0, 0, 255),
+    "green": (0, 255, 0),
+    "blue": (255, 0, 0),
+    "yellow": (0, 255, 255),
+    "white": (255, 255, 255),
+    "black": (0, 0, 0),
+}
+
+box_colour = colourmap["red"]
+text_colour = colourmap["white"]
+font = cv2.FONT_HERSHEY_DUPLEX
+
+# ------------------------------------------------------------------------------
+# Either build or load the known face encodings
+
+if generate_database is True:
+
+    print("Generating face database")
 
     known_face_encodings = face.create_face_database(files)
 
@@ -32,18 +69,21 @@ if generate_database is True:
 
 else:
 
-    print("loading face database")
+    print("Loading face database")
     (known_face_encodings, known_face_names) = pickle.load(open("faces.pkl",
                                                                 "rb"))
 
-# Get a reference to webcam #0 (the default one)
-video_capture = cv2.VideoCapture(0)
+# ------------------------------------------------------------------------------
+# Main loop
+
+# Get a reference to the video
+video_capture = cv2.VideoCapture(webcam_index)
+process_this_frame = 0
 
 while True:
     # Grab a single frame of video
     ret, frame = video_capture.read()
 
-    # Only process every other frame of video to save time
     if (process_this_frame == 0):
         face_locations, face_names = face.find_faces(frame,
                                                      known_face_encodings,
@@ -54,27 +94,20 @@ while True:
 
     # Display the results
     for (top, right, bottom, left), name in zip(face_locations, face_names):
-        # Scale back up face locations
-        top *= image_scale_up
-        right *= image_scale_up
-        bottom *= image_scale_up
-        left *= image_scale_up
-
         # Draw a box around the face
-        cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
+        cv2.rectangle(frame, (left, top), (right, bottom), box_colour, 2)
 
         # Draw a label with a name below the face
         cv2.rectangle(frame, (left, bottom - 35), (right, bottom),
-                      (0, 0, 255), cv2.FILLED)
-        font = cv2.FONT_HERSHEY_DUPLEX
-        cv2.putText(frame, name, (left + 6, bottom - 6), font, 1.0,
-                    (255, 255, 255), 1)
+                      box_colour, cv2.FILLED)
+        cv2.putText(frame, name, (left + 6, bottom - 6), font, 1,
+                    text_colour, 1)
 
     # Display the resulting image
     cv2.imshow('Video', frame)
 
     # Hit 'q' on the keyboard to quit!
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    if cv2.waitKey(1) == ord('q'):
         break
 
 # Release handle to the webcam

@@ -71,7 +71,14 @@ def find_faces(frame,
 
         face_names.append(name)
 
-    return face_locations, face_names
+    # rescale the face locations to be consistend with the unscaled image
+    rescaled_face_locations = [(int(top / image_scale_down),
+                                int(right / image_scale_down),
+                                int(bottom / image_scale_down),
+                                int(left / image_scale_down))
+                               for top, right, bottom, left in face_locations]
+
+    return rescaled_face_locations, face_names
 
 
 # Set up face database
