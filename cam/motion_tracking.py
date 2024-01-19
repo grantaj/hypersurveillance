@@ -12,6 +12,8 @@ import sys
 import pickle
 import face as facerecog
 from fresh import FreshestFrame
+import threading
+import queue
 
 # from pythonosc import osc_message_builder
 # from pythonosc import udp_client
@@ -120,6 +122,7 @@ def onvif_continuous_move(x, y, z):
 
     return requests.post(url, headers=headers, data=data)
 
+
 def onvif_absolute_move(x, y, z):
     xml_body = XML_BODY_ABSOLUTEMOVE
     xml_body = xml_body.replace("insert_x", str(x))
@@ -133,6 +136,7 @@ def onvif_absolute_move(x, y, z):
     headers = {"Content-Type": "application/xml"}
 
     return requests.post(url, headers=headers, data=data)
+
 
 def onvif_stop():
     xml_body = XML_BODY_STOP
@@ -175,7 +179,9 @@ class Face:
         self.face_centre_y = (self.y + (self.h / 2)) / frame.shape[0]
         self.normalised_x = (self.face_centre_x - 0.5) * 2
         self.normalised_y = -(self.face_centre_y - 0.5) * 2
-        self.normalised_delta = math.sqrt(self.normalised_x ** 2 + self.normalised_y ** 2)
+        self.normalised_delta = math.sqrt(
+            self.normalised_x ** 2 + self.normalised_y ** 2
+        )
 
     def set_from_trbl(self, top, right, bottom, left):
         self.x = left
@@ -261,6 +267,8 @@ def opencv_debug_overlay(frame: np.ndarray, face_count: int, face: Face):
 
 
 def face_overlay(frame, face_locations, face_names, target):
+    if face_locations is None or face_names is None:
+        return
 
     text_colour = (255, 255, 255)
     font = cv2.FONT_HERSHEY_DUPLEX
@@ -279,6 +287,39 @@ def face_overlay(frame, face_locations, face_names, target):
             frame, (left, bottom - 35), (right, bottom), box_colour, cv2.FILLED
         )
         cv2.putText(frame, name, (left + 6, bottom - 6), font, 1, text_colour, 1)
+
+
+def face_recognition(
+    freshcap,
+    known_face_encodings,
+    known_face_names,
+    image_scale_down,
+    sleep_duration_seconds,
+    result_queue,
+):
+    while True:
+        ret, frame = freshcap.read()
+        face_locations, face_names = facerecog.find_faces(
+            frame, known_face_encodings, known_face_names, image_scale_down
+        )
+
+        if not result_queue.empty():
+            # Discard the old result
+            try:
+                result_queue.get_nowait()
+            except queue.Empty:
+                pass
+
+        result_queue.put((face_locations, face_names))
+
+        time.sleep(sleep_duration_seconds)
+
+
+def get_latest_result(result_queue):
+    try:
+        return result_queue.get_nowait()
+    except queue.Empty:
+        return None, None
 
 
 def main(mode):
@@ -303,7 +344,7 @@ def main(mode):
     freshcap = FreshestFrame(cap)
 
     # Load the pre-trained face cascade
-    face_cascade = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
+    # face_cascade = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
 
     # Load the known face encodings
     (known_face_encodings, known_face_names) = pickle.load(open("faces.pkl", "rb"))
@@ -311,8 +352,7 @@ def main(mode):
     target = "Alex"
 
     # Limit frame rates (adjust as needed)
-    face_detection_fps = 2
-    face_detection_fps_prev = 0.0
+    face_detection_fps = 5
     send_command_fps = 10
     send_command_fps_prev = 0.0
 
@@ -328,11 +368,29 @@ def main(mode):
     is_camera_moving_x = False
     is_camera_moving_y = False
 
-    count = 0;
-    total_time = 0;
+    result_queue = queue.Queue(maxsize=1)
+    thread = threading.Thread(
+        target=face_recognition,
+        args=(
+            freshcap,
+            known_face_encodings,
+            known_face_names,
+            image_scale_down,
+            1.0 / face_detection_fps,
+            result_queue,
+        ),
+    )
+    thread.daemon = True  # Thread will close when main program exits
+    thread.start()
+
+    count = 0
+    total_time = 0
+
+    face_locations = []
+    face_names = []
+
     while True:
         # check timers
-        face_detection_time_elapsed = time.time() - face_detection_fps_prev
         send_command_time_elapsed = time.time() - send_command_fps_prev
 
         # Read a frame
@@ -340,45 +398,38 @@ def main(mode):
 
         ##########
         # FACE DETECTION
-        if face_detection_time_elapsed > 1.0 / face_detection_fps:
+        new_face_locations, new_face_names = get_latest_result(result_queue)
 
-            # reset face detection timer
-            # face_detection_fps_prev = time.time()
+        if new_face_locations is not None:
+            face_locations = new_face_locations
+            face_names = new_face_names
 
-            # face_count = face_detection(frame, face_cascade, face)
+        try:
+            face_index = face_names.index(target)
+            (top, right, bottom, left) = face_locations[face_index]
+            face.set_from_trbl(top, right, bottom, left)
+            face.normalise(frame)
+            targetFound = True
 
-            # calculate vector length between centre of face and centre of screen
-            face_locations, face_names = facerecog.find_faces(
-                frame, known_face_encodings, known_face_names, image_scale_down
-            )
-            face_count = len(face_locations)
+        except ValueError:
+            targetFound = False
 
-            try:
-                face_index = face_names.index(target)
-                (top, right, bottom, left) = face_locations[face_index]
-                face.set_from_trbl(top, right, bottom, left)
-                face.normalise(frame)
-                targetFound = True
+        face_overlay(frame, face_locations, face_names, target)
 
-            except ValueError:
-                targetFound = False
-
-        if True:
+        if mode == MODE_STREAM:
             ##########
             # STOP COMMAND
-            if (
-                face.get_elapsed_time() >
-                timedelta(seconds=maximum_detection_age_seconds) and
-                (is_camera_moving_x or is_camera_moving_y)
-            ):
+            if face.get_elapsed_time() > timedelta(
+                seconds=maximum_detection_age_seconds
+            ) and (is_camera_moving_x or is_camera_moving_y):
                 onvif_stop()
                 is_camera_moving_x = False
                 is_camera_moving_y = False
                 print("stopping movement (target lost)")
 
             if (
-                    is_camera_moving_x and
-                    face.normalised_x < normalised_delta_threshold/2
+                is_camera_moving_x
+                and face.normalised_x < normalised_delta_threshold / 2
             ):
                 onvif_stop()
                 is_camera_moving_x = False
@@ -386,8 +437,8 @@ def main(mode):
                 print("stopping x movement")
 
             if (
-                    is_camera_moving_y and
-                    face.normalised_y < normalised_delta_threshold/2
+                is_camera_moving_y
+                and face.normalised_y < normalised_delta_threshold / 2
             ):
                 onvif_stop()
                 is_camera_moving_y = False
@@ -402,25 +453,23 @@ def main(mode):
                 send_command_fps_prev = time.time()
 
                 if (
-                        face.normalised_delta > normalised_delta_threshold and
-                        face.get_elapsed_time() <
-                        timedelta(seconds=maximum_detection_age_seconds)
+                    face.normalised_delta > normalised_delta_threshold
+                    and face.get_elapsed_time()
+                    < timedelta(seconds=maximum_detection_age_seconds)
                 ):
 
                     if math.fabs(face.normalised_x) > math.fabs(face.normalised_y):
                         # Pan
-                        onvif_continuous_move(face.normalised_x/10, 0, 0)
+                        onvif_continuous_move(face.normalised_x / 10, 0, 0)
                         is_camera_moving_x = True
                         is_camera_moving_y = False
                         print("x movement")
                     else:
                         # Tilt
-                        onvif_continuous_move(0, face.normalised_y/10, 0)
+                        onvif_continuous_move(0, face.normalised_y / 10, 0)
                         is_camera_moving_y = True
                         is_camera_moving_x = False
                         print("y movement")
-
-        face_overlay(frame, face_locations, face_names, target)
 
         # opencv_debug_overlay(frame, face_count, face)
 
@@ -432,7 +481,11 @@ def main(mode):
 
         # Quit application
         if key == ord("q"):
-            onvif_stop()
+
+            if mode == MODE_STREAM:
+                onvif_stop()
+                onvif_absolute_move(0, 0, 0)
+
             break
 
     # Release the webcam and close the window
@@ -441,7 +494,7 @@ def main(mode):
 
 
 # MODE_CAMERA || MODE_STREAM
-main(MODE_STREAM)
+main(MODE_CAMERA)
 
 # HELPFUL OSC CODE FOR FUTURE
 # Set up OSC client
