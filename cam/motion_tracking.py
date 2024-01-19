@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 import base64
 import hashlib
 import os
-import datetime
 import pytz
 import requests
 import math
@@ -68,16 +67,19 @@ def onvif_create_timestamp():
     timestamp = timestamp.replace(tzinfo=pytz.utc, microsecond=0)
     return timestamp.isoformat()
 
-def onvif_create_nonce():    
-  return os.urandom(16)
+
+def onvif_create_nonce():
+    return os.urandom(16)
+
 
 def onvif_get_password_digest(nonce, timestamp, password):
-  timestamp_utf8 = timestamp.encode("utf-8")
-  password_utf8 = password.encode("utf-8")
-  hash = hashlib.sha1(nonce + timestamp_utf8 + password_utf8).digest()
-  digest = base64.b64encode(hash).decode("ascii")
-  return digest
-   
+    timestamp_utf8 = timestamp.encode("utf-8")
+    password_utf8 = password.encode("utf-8")
+    hash = hashlib.sha1(nonce + timestamp_utf8 + password_utf8).digest()
+    digest = base64.b64encode(hash).decode("ascii")
+    return digest
+
+
 def onvif_create_xml(xml_body):
     nonce = onvif_create_nonce()
     timestamp = onvif_create_timestamp()
@@ -90,6 +92,7 @@ def onvif_create_xml(xml_body):
     xml = xml.replace("insert_body", xml_body)
     return xml
 
+
 def onvif_continuous_move(x, y, z):
     xml_body = XML_BODY_CONTINUOUSMOVE
     xml_body = xml_body.replace("insert_x", str(x))
@@ -99,64 +102,73 @@ def onvif_continuous_move(x, y, z):
     xml_body = xml_body.replace("insert_profile_token", CAMERA_PROFILE_TOKEN)
 
     data = onvif_create_xml(xml_body)
-    
+
     url = f"http://{CAMERA_IP}:2020/onvif/service"
-    headers = {'Content-Type': 'application/xml'} 
- 
+    headers = {"Content-Type": "application/xml"}
+
     return requests.post(url, headers=headers, data=data)
+
 
 def onvif_stop():
     xml_body = XML_BODY_STOP
     xml_body = xml_body.replace("insert_profile_token", CAMERA_PROFILE_TOKEN)
 
     data = onvif_create_xml(xml_body)
-    
+
     url = f"http://{CAMERA_IP}:2020/onvif/service"
-    headers = {'Content-Type': 'application/xml'} 
- 
+    headers = {"Content-Type": "application/xml"}
+
     return requests.post(url, headers=headers, data=data)
+
 
 ##########################################################################################
 # face detection
 
+
 class Face:
-    """ class for holding related data of a found face"""
+    """Found face object.
+
+    The face is stored as a bounding box
+    The face is timestamped
+    """
+
     def __init__(self) -> None:
-        self.x : int = 0
-        self.y : int = 0
-        self.w : int = 0
-        self.h : int = 0
-        self.face_centre_x : float = 0
-        self.face_centre_y : float = 0
-        self.normalised_x : float = 0
-        self.normalised_y : float = 0
-        self.delta_length : float = 0
+        self.x: int = 0
+        self.y: int = 0
+        self.w: int = 0
+        self.h: int = 0
+        self.face_centre_x: float = 0
+        self.face_centre_y: float = 0
+        self.normalised_x: float = 0
+        self.normalised_y: float = 0
+        self.delta_length: float = 0
         self.timeStamp = None
         pass
 
     def normalise(self, frame):
-        self.face_centre_x = (self.x + (self.w/2)) / frame.shape[1]
-        self.face_centre_y = (self.y + (self.h/2)) / frame.shape[0]
+        self.face_centre_x = (self.x + (self.w / 2)) / frame.shape[1]
+        self.face_centre_y = (self.y + (self.h / 2)) / frame.shape[0]
         self.normalised_x = (self.face_centre_x - 0.5) * 2
         self.normalised_y = -(self.face_centre_y - 0.5) * 2
-        self.delta_length = math.sqrt(self.normalised_x**2 +
-                                      self.normalised_y**2)
+        self.delta_length = math.sqrt(self.normalised_x ** 2 + self.normalised_y ** 2)
 
     def setFromTRBL(self, top, right, bottom, left):
         self.x = left
         self.y = bottom
         self.w = right - left
         self.h = top - bottom
-        self.timeStamp = datetime.now()
+        self.timeStamp = datetime.datetime.now()
 
     def getElapsedTime(self):
         if self.timeStamp is None:
             return timedelta.max
-        return datetime.now() - self.timeStamp
+        return datetime.datetime.now() - self.timeStamp
 
 
-def face_detection(frame:np.ndarray, face_cascade:cv2.CascadeClassifier , face:Face) -> int:
-    """ detect a face on an opencv frame, using a provided CascadeClassifer 
+def face_detection(
+    frame: np.ndarray, face_cascade: cv2.CascadeClassifier, face: Face
+) -> int:
+    """detect a face on an opencv frame, using a provided CascadeClassifer
         and store in custom Face class
 
     Args:
@@ -192,7 +204,7 @@ def face_detection(frame:np.ndarray, face_cascade:cv2.CascadeClassifier , face:F
     return len(faces)
 
 
-def opencv_debug_overlay(frame:np.ndarray, face_count:int, face:Face):
+def opencv_debug_overlay(frame: np.ndarray, face_count: int, face: Face):
     """overlay debug information on opencv frame
 
     Args:
@@ -201,19 +213,33 @@ def opencv_debug_overlay(frame:np.ndarray, face_count:int, face:Face):
         face (Face): face object
     """
     # Display amount of faces found
-            
-    face_message = 'Faces found ' + str(face_count)
-    cv2.putText(frame, face_message, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)   
+
+    face_message = "Faces found " + str(face_count)
+    cv2.putText(
+        frame, face_message, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2
+    )
 
     if face.x == 0 and face.y == 0 and face.w == 0 and face.h == 0 or face_count == 0:
         pass
-    else:        
+    else:
         # Draw rectangles around the detected faces
-        cv2.rectangle(frame, (face.x, face.y), (face.x+face.w, face.y+face.h), (255, 0, 0), 2)
-        
+        cv2.rectangle(
+            frame, (face.x, face.y), (face.x + face.w, face.y + face.h), (255, 0, 0), 2
+        )
+
         # display x,y,w,h
-        coor_str = f"x: {str(round(face.normalised_x,2))} y: {str(round(face.normalised_y,2))}"
-        cv2.putText(frame, coor_str, (face.x, face.y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        coor_str = (
+            f"x: {str(round(face.normalised_x,2))} y: {str(round(face.normalised_y,2))}"
+        )
+        cv2.putText(
+            frame,
+            coor_str,
+            (face.x, face.y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 0, 255),
+            2,
+        )
 
 
 def face_overlay(frame, face_locations, face_names, target):
@@ -231,10 +257,10 @@ def face_overlay(frame, face_locations, face_names, target):
         cv2.rectangle(frame, (left, top), (right, bottom), box_colour, 2)
 
         # Draw a label with a name below the face
-        cv2.rectangle(frame, (left, bottom - 35), (right, bottom),
-                      box_colour, cv2.FILLED)
-        cv2.putText(frame, name, (left + 6, bottom - 6), font, 1,
-                    text_colour, 1)
+        cv2.rectangle(
+            frame, (left, bottom - 35), (right, bottom), box_colour, cv2.FILLED
+        )
+        cv2.putText(frame, name, (left + 6, bottom - 6), font, 1, text_colour, 1)
 
 
 def main(mode):
@@ -247,16 +273,17 @@ def main(mode):
     elif mode == MODE_STREAM:
         # Open an RTSP stream
         filename = RTSP_URL
-    
-    # cap = cv2.VideoCapture(RTSP_URL) 
-    freshcap = FreshestFrame(filename)
 
-    if not freshcap.isOpened():
+    # cap = cv2.VideoCapture(RTSP_URL)
+    cap = cv2.VideoCapture(filename)
+    if not cap.isOpened():
         print("Error: Could not open cv2 stream")
         exit()
 
+    freshcap = FreshestFrame(cap)
+
     # Load the pre-trained face cascade
-    face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+    face_cascade = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
 
     # Load the known face encodings
     (known_face_encodings, known_face_names) = pickle.load(open("faces.pkl", "rb"))
@@ -268,6 +295,9 @@ def main(mode):
     face_detection_fps_prev = 0.0
     send_command_fps = 1
     send_command_fps_prev = 0.0
+
+    # Don't use detections older than this
+    maximumDetectionAgeSeconds = 1
 
     # theshold of face movement before sending move command (adjust as needed)
     delta_length_threshold = 0.2
@@ -284,25 +314,23 @@ def main(mode):
 
         # Read a frame from the webcam
         ret, frame = freshcap.read()
-        
 
         ##########
         # FACE DETECTION
-        if face_detection_time_elapsed > 1.0/face_detection_fps:
-            
-            # reset face detection timer
-            #face_detection_fps_prev = time.time()
+        if face_detection_time_elapsed > 1.0 / face_detection_fps:
 
-            #face_count = face_detection(frame, face_cascade, face)
-            
+            # reset face detection timer
+            # face_detection_fps_prev = time.time()
+
+            # face_count = face_detection(frame, face_cascade, face)
+
             # calculate vector length between centre of face and centre of screen
-           
-            face_locations, face_names = facerecog.find_faces(frame,
-                                                              known_face_encodings,
-                                                              known_face_names,
-                                                              image_scale_down)
+
+            face_locations, face_names = facerecog.find_faces(
+                frame, known_face_encodings, known_face_names, image_scale_down
+            )
             face_count = len(face_locations)
-            
+
             try:
                 face_index = face_names.index(target)
                 (top, right, bottom, left) = face_locations[face_index]
@@ -317,17 +345,20 @@ def main(mode):
             ##########
             # STOP COMMAND
             # TODO - only stop if the target is not found for a given time
-            if face.delta_length < delta_length_threshold or targetFound is False:
+            if (
+                face.delta_length < delta_length_threshold
+                or face.getElapsedTime() > timedelta(seconds=maximumDetectionAgeSeconds)
+            ):
 
                 # issue stop command
                 if is_camera_moving:
-                    print('stop command')
+                    print("stop command")
                     onvif_stop()
                     is_camera_moving = False
 
             ##########
             # MOVE COMMAND
-            if send_command_time_elapsed> 1.0/send_command_fps:
+            if send_command_time_elapsed > 1.0 / send_command_fps:
 
                 # reset send command timer
                 send_command_fps_prev = time.time()
@@ -336,34 +367,40 @@ def main(mode):
                     is_camera_moving = True
 
                     # issue move command with speed proportional to delta_length
-                    print(f'move command {round(face.normalised_x * face.delta_length,2)} {round(face.normalised_y * face.delta_length,2)}')
-                    onvif_continuous_move(face.normalised_x * face.delta_length, face.normalised_y * face.delta_length, 0)
+                    print(
+                        f"move command {round(face.normalised_x * face.delta_length,2)} {round(face.normalised_y * face.delta_length,2)}"
+                    )
+                    onvif_continuous_move(
+                        face.normalised_x * face.delta_length,
+                        face.normalised_y * face.delta_length,
+                        0,
+                    )
 
         face_overlay(frame, face_locations, face_names, target)
 
-        #opencv_debug_overlay(frame, face_count, face)
+        # opencv_debug_overlay(frame, face_count, face)
 
         # Display the frame
-        cv2.imshow('Webcam', frame)  
-        
+        cv2.imshow("Webcam", frame)
+
         # Check key presses
         key = cv2.waitKey(1)
 
         # Quit application
-        if key == ord('q'):
+        if key == ord("q"):
             break
 
     # Release the webcam and close the window
     freshcap.release()
     cv2.destroyAllWindows()
 
+
 # MODE_CAMERA || MODE_STREAM
 main(MODE_CAMERA)
-    
+
 # HELPFUL OSC CODE FOR FUTURE
 # Set up OSC client
 # osc_client = udp_client.SimpleUDPClient("192.168.1.102", 12345)  # Replace with your actual destination IP and port
 
 # Send OSC message with face detection data
 # osc_client.send_message("/face_detection", (float(normalized_x), float(normalized_y), float(normalized_w), float(normalized_h)))
-    
