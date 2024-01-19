@@ -40,6 +40,16 @@ XML_TEMPLATE = """
 </soap-env:Envelope>
 """
 
+XML_BODY_ABSOLUTEMOVE = """
+<ns0:AbsoluteMove xmlns:ns0="http://www.onvif.org/ver20/ptz/wsdl">
+    <ns0:ProfileToken>profile_1</ns0:ProfileToken>
+    <ns0:Position>
+        <ns1:PanTilt xmlns:ns1="http://www.onvif.org/ver10/schema" x="insert_x" y="insert_y"/>
+        <ns2:Zoom xmlns:ns2="http://www.onvif.org/ver10/schema" x="insert_z"/>
+    </ns0:Position>
+</ns0:AbsoluteMove>
+"""
+
 XML_BODY_CONTINUOUSMOVE = """
 <ContinuousMove xmlns="http://www.onvif.org/ver20/ptz/wsdl">
     <ProfileToken>insert_profile_token</ProfileToken>
@@ -57,6 +67,7 @@ XML_BODY_STOP = """
 </ns0:Stop>
 """
 
+
 MODE_CAMERA = 0
 MODE_STREAM = 1
 
@@ -64,7 +75,7 @@ MODE_STREAM = 1
 ##########################################################################################
 # ONVIF functions
 def onvif_create_timestamp():
-    timestamp = datetime.datetime.utcnow()
+    timestamp = datetime.utcnow()
     timestamp = timestamp.replace(tzinfo=pytz.utc, microsecond=0)
     return timestamp.isoformat()
 
@@ -109,6 +120,19 @@ def onvif_continuous_move(x, y, z):
 
     return requests.post(url, headers=headers, data=data)
 
+def onvif_absolute_move(x, y, z):
+    xml_body = XML_BODY_ABSOLUTEMOVE
+    xml_body = xml_body.replace("insert_x", str(x))
+    xml_body = xml_body.replace("insert_y", str(y))
+    xml_body = xml_body.replace("insert_z", str(z))
+    xml_body = xml_body.replace("insert_profile_token", CAMERA_PROFILE_TOKEN)
+
+    data = onvif_create_xml(xml_body)
+
+    url = f"http://{CAMERA_IP}:2020/onvif/service"
+    headers = {"Content-Type": "application/xml"}
+
+    return requests.post(url, headers=headers, data=data)
 
 def onvif_stop():
     xml_body = XML_BODY_STOP
@@ -158,12 +182,12 @@ class Face:
         self.y = bottom
         self.w = right - left
         self.h = top - bottom
-        self.timeStamp = datetime.datetime.now()
+        self.timeStamp = datetime.now()
 
     def get_elapsed_time(self):
         if self.timeStamp is None:
             return timedelta.max
-        return datetime.datetime.now() - self.timeStamp
+        return datetime.now() - self.timeStamp
 
 
 def face_detection(
@@ -266,6 +290,7 @@ def main(mode):
     elif mode == MODE_STREAM:
         # Open an RTSP stream
         filename = RTSP_URL
+        onvif_absolute_move(0, 0, 0)
     else:
         sys.exit("Unknown mode.")
 
@@ -283,12 +308,12 @@ def main(mode):
     # Load the known face encodings
     (known_face_encodings, known_face_names) = pickle.load(open("faces.pkl", "rb"))
     image_scale_down = 1
-    target = "Fraz"
+    target = "Alex"
 
     # Limit frame rates (adjust as needed)
-    face_detection_fps = 4
+    face_detection_fps = 2
     face_detection_fps_prev = 0.0
-    send_command_fps = 1
+    send_command_fps = 10
     send_command_fps_prev = 0.0
 
     # Don't use detections older than this
@@ -303,6 +328,8 @@ def main(mode):
     is_camera_moving_x = False
     is_camera_moving_y = False
 
+    count = 0;
+    total_time = 0;
     while True:
         # check timers
         face_detection_time_elapsed = time.time() - face_detection_fps_prev
@@ -321,7 +348,6 @@ def main(mode):
             # face_count = face_detection(frame, face_cascade, face)
 
             # calculate vector length between centre of face and centre of screen
-
             face_locations, face_names = facerecog.find_faces(
                 frame, known_face_encodings, known_face_names, image_scale_down
             )
@@ -337,7 +363,7 @@ def main(mode):
             except ValueError:
                 targetFound = False
 
-        if False:
+        if True:
             ##########
             # STOP COMMAND
             if (
@@ -350,20 +376,22 @@ def main(mode):
                 is_camera_moving_y = False
                 print("stopping movement (target lost)")
 
-            elif (
+            if (
                     is_camera_moving_x and
-                    face.normalised_x < normalised_delta_threshold
+                    face.normalised_x < normalised_delta_threshold/2
             ):
                 onvif_stop()
                 is_camera_moving_x = False
+                is_camera_moving_y = False
                 print("stopping x movement")
 
-            elif (
+            if (
                     is_camera_moving_y and
-                    face.normalised_y < normalised_delta_threshold
+                    face.normalised_y < normalised_delta_threshold/2
             ):
                 onvif_stop()
                 is_camera_moving_y = False
+                is_camera_moving_x = False
                 print("stopping y movement")
 
             ##########
@@ -373,16 +401,24 @@ def main(mode):
                 # reset send command timer
                 send_command_fps_prev = time.time()
 
-                if face.normalised_delta > normalised_delta_threshold:
+                if (
+                        face.normalised_delta > normalised_delta_threshold and
+                        face.get_elapsed_time() <
+                        timedelta(seconds=maximum_detection_age_seconds)
+                ):
 
-                    if face.normalised_x > face.normalised_y:
+                    if math.fabs(face.normalised_x) > math.fabs(face.normalised_y):
                         # Pan
-                        onvif_continuous_move(face.normalised_x, 0, 0)
+                        onvif_continuous_move(face.normalised_x/10, 0, 0)
                         is_camera_moving_x = True
+                        is_camera_moving_y = False
+                        print("x movement")
                     else:
                         # Tilt
-                        onvif_continuous_move(face.normalised_x, 0, 0)
+                        onvif_continuous_move(0, face.normalised_y/10, 0)
                         is_camera_moving_y = True
+                        is_camera_moving_x = False
+                        print("y movement")
 
         face_overlay(frame, face_locations, face_names, target)
 
@@ -396,6 +432,7 @@ def main(mode):
 
         # Quit application
         if key == ord("q"):
+            onvif_stop()
             break
 
     # Release the webcam and close the window
@@ -404,7 +441,7 @@ def main(mode):
 
 
 # MODE_CAMERA || MODE_STREAM
-main(MODE_CAMERA)
+main(MODE_STREAM)
 
 # HELPFUL OSC CODE FOR FUTURE
 # Set up OSC client
