@@ -14,6 +14,9 @@ import face as facerecog
 from fresh import FreshestFrame
 import threading
 import queue
+import tkinter as tk
+from tkinter import simpledialog
+import os
 
 # from pythonosc import osc_message_builder
 # from pythonosc import udp_client
@@ -322,6 +325,7 @@ def get_latest_result(result_queue):
         return None, None
 
 
+
 def main(mode):
     webcam_index = 0
 
@@ -485,8 +489,28 @@ def main(mode):
             if mode == MODE_STREAM:
                 onvif_stop()
                 onvif_absolute_move(0, 0, 0)
-
             break
+        
+        # Add image to face recognition
+        elif key == ord('f'):
+            image_filename = f"new_frame.png"
+            cv2.imwrite(image_filename, frame)
+            root = tk.Tk()
+            root.withdraw()
+            user_input = simpledialog.askstring("Input", "Enter something:")
+            if user_input is None:
+                user_input = 'missing_name'
+            filename = user_input + ".png"
+            print(filename)
+            os.rename("new_frame.png", filename)
+
+            image = face_recognition.load_image_file(filename)
+            encoding = face_recognition.face_encodings(image)[0]
+            known_face_encodings.append(encoding)
+
+            pickle.dump((known_face_encodings, known_face_names),
+                open("faces.pkl", "wb"))
+
 
     # Release the webcam and close the window
     freshcap.release()
