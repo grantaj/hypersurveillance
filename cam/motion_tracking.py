@@ -16,7 +16,6 @@ import threading
 import queue
 import tkinter as tk
 from tkinter import simpledialog
-import os
 
 # from pythonosc import osc_message_builder
 # from pythonosc import udp_client
@@ -294,9 +293,9 @@ def face_overlay(frame, face_locations, face_names, target):
 
 def face_recognition(
     freshcap,
+    lock,
     shared_face_encodings,
     shared_face_names,
-    lock,
     image_scale_down,
     sleep_duration_seconds,
     result_queue,
@@ -306,7 +305,10 @@ def face_recognition(
 
         with lock:
             known_face_encodings = shared_face_encodings[0]
-            known_face_names = shared_face_names[1]
+            known_face_names = shared_face_names[0]
+
+        if not known_face_encodings:
+            continue
 
         face_locations, face_names = facerecog.find_faces(
             frame, known_face_encodings, known_face_names, image_scale_down
@@ -322,12 +324,6 @@ def face_recognition(
         result_queue.put((face_locations, face_names))
 
         time.sleep(sleep_duration_seconds)
-
-
-def update_parameter(new_value, param, lock):
-    with lock:
-        # Safely update the shared parameter
-        param[0] = new_value
 
 
 def get_latest_result(result_queue):
@@ -364,6 +360,10 @@ def main(mode):
 
     # Load the known face encodings
     (known_face_encodings, known_face_names) = pickle.load(open("faces.pkl", "rb"))
+
+    #known_face_encodings = []
+    #known_face_names = []
+
     image_scale_down = 1
     target = "Alex"
 
@@ -391,12 +391,8 @@ def main(mode):
     thread = threading.Thread(
         target=face_recognition,
         args=(
-            freshcap,
-            param_lock,
-            shared_face_encodings,
-            shared_face_names,
-            image_scale_down,
-            1.0 / face_detection_fps,
+            freshcap, param_lock, shared_face_encodings,
+            shared_face_names, image_scale_down, 1.0 / face_detection_fps,
             result_queue,
         ),
     )
@@ -433,8 +429,6 @@ def main(mode):
 
         except ValueError:
             targetFound = False
-
-        face_overlay(frame, face_locations, face_names, target)
 
         if mode == MODE_STREAM:
             ##########
@@ -494,6 +488,7 @@ def main(mode):
         # opencv_debug_overlay(frame, face_count, face)
 
         # Display the frame
+        face_overlay(frame, face_locations, face_names, target)
         cv2.imshow("Webcam", frame)
 
         # Check key presses
@@ -506,10 +501,11 @@ def main(mode):
                 onvif_stop()
                 onvif_absolute_move(0, 0, 0)
             break
-        
+
         # Add image to face recognition
         elif key == ord('f'):
             image_filename = f"new_frame.png"
+            ret, frame = freshcap.read()
             cv2.imwrite(image_filename, frame)
             root = tk.Tk()
             root.withdraw()
@@ -519,14 +515,21 @@ def main(mode):
             filename = user_input + ".png"
             print(filename)
             os.rename("new_frame.png", filename)
+            encoding = facerecog.create_face_database([filename])
+            known_face_encodings.append(encoding[0])
+            known_face_names.append(user_input)
 
-            image = face_recognition.load_image_file(filename)
-            encoding = face_recognition.face_encodings(image)[0]
-            known_face_encodings.append(encoding)
+            with param_lock:
+                shared_face_encodings[0] = known_face_encodings
+                shared_face_names[0] = known_face_names
 
             pickle.dump((known_face_encodings, known_face_names),
-                open("faces.pkl", "wb"))
+                        open("faces.pkl", "wb"))
 
+        elif key == ord('t'):
+            user_input = simpledialog.askstring("Input", "Enter something:")
+            if user_input is not None:
+                target = user_input
 
     # Release the webcam and close the window
     freshcap.release()
