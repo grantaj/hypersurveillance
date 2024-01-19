@@ -8,6 +8,7 @@ import pytz
 import requests
 import math
 import numpy as np
+import sys
 import pickle
 import face as facerecog
 from fresh import FreshestFrame
@@ -141,7 +142,7 @@ class Face:
         self.face_centre_y: float = 0
         self.normalised_x: float = 0
         self.normalised_y: float = 0
-        self.delta_length: float = 0
+        self.normalised_delta: float = 0
         self.timeStamp = None
         pass
 
@@ -150,16 +151,16 @@ class Face:
         self.face_centre_y = (self.y + (self.h / 2)) / frame.shape[0]
         self.normalised_x = (self.face_centre_x - 0.5) * 2
         self.normalised_y = -(self.face_centre_y - 0.5) * 2
-        self.delta_length = math.sqrt(self.normalised_x ** 2 + self.normalised_y ** 2)
+        self.normalised_delta = math.sqrt(self.normalised_x ** 2 + self.normalised_y ** 2)
 
-    def setFromTRBL(self, top, right, bottom, left):
+    def set_from_trbl(self, top, right, bottom, left):
         self.x = left
         self.y = bottom
         self.w = right - left
         self.h = top - bottom
         self.timeStamp = datetime.datetime.now()
 
-    def getElapsedTime(self):
+    def get_elapsed_time(self):
         if self.timeStamp is None:
             return timedelta.max
         return datetime.datetime.now() - self.timeStamp
@@ -257,15 +258,16 @@ def face_overlay(frame, face_locations, face_names, target):
 
 
 def main(mode):
-
-    filename = 0
+    webcam_index = 0
 
     if mode == MODE_CAMERA:
-        # Open the webcam (usually the default camera, 0)
-        filename = 0
+        # Open a webcam
+        filename = webcam_index
     elif mode == MODE_STREAM:
         # Open an RTSP stream
         filename = RTSP_URL
+    else:
+        sys.exit("Unknown mode.")
 
     # cap = cv2.VideoCapture(RTSP_URL)
     cap = cv2.VideoCapture(filename)
@@ -290,22 +292,23 @@ def main(mode):
     send_command_fps_prev = 0.0
 
     # Don't use detections older than this
-    maximumDetectionAgeSeconds = 1
+    maximum_detection_age_seconds = 1
 
     # theshold of face movement before sending move command (adjust as needed)
-    delta_length_threshold = 0.2
+    normalised_delta_threshold = 0.2
 
     face_count = 0
     face = Face()
 
-    is_camera_moving = False
+    is_camera_moving_x = False
+    is_camera_moving_y = False
 
     while True:
         # check timers
         face_detection_time_elapsed = time.time() - face_detection_fps_prev
         send_command_time_elapsed = time.time() - send_command_fps_prev
 
-        # Read a frame from the webcam
+        # Read a frame
         ret, frame = freshcap.read()
 
         ##########
@@ -327,7 +330,7 @@ def main(mode):
             try:
                 face_index = face_names.index(target)
                 (top, right, bottom, left) = face_locations[face_index]
-                face.setFromTRBL(top, right, bottom, left)
+                face.set_from_trbl(top, right, bottom, left)
                 face.normalise(frame)
                 targetFound = True
 
@@ -337,17 +340,31 @@ def main(mode):
         if False:
             ##########
             # STOP COMMAND
-            # TODO - only stop if the target is not found for a given time
             if (
-                face.delta_length < delta_length_threshold
-                or face.getElapsedTime() > timedelta(seconds=maximumDetectionAgeSeconds)
+                face.get_elapsed_time() >
+                timedelta(seconds=maximum_detection_age_seconds) and
+                (is_camera_moving_x or is_camera_moving_y)
             ):
+                onvif_stop()
+                is_camera_moving_x = False
+                is_camera_moving_y = False
+                print("stopping movement (target lost)")
 
-                # issue stop command
-                if is_camera_moving:
-                    print("stop command")
-                    onvif_stop()
-                    is_camera_moving = False
+            elif (
+                    is_camera_moving_x and
+                    face.normalised_x < normalised_delta_threshold
+            ):
+                onvif_stop()
+                is_camera_moving_x = False
+                print("stopping x movement")
+
+            elif (
+                    is_camera_moving_y and
+                    face.normalised_y < normalised_delta_threshold
+            ):
+                onvif_stop()
+                is_camera_moving_y = False
+                print("stopping y movement")
 
             ##########
             # MOVE COMMAND
@@ -356,18 +373,16 @@ def main(mode):
                 # reset send command timer
                 send_command_fps_prev = time.time()
 
-                if face.delta_length > delta_length_threshold:
-                    is_camera_moving = True
+                if face.normalised_delta > normalised_delta_threshold:
 
-                    # issue move command with speed proportional to delta_length
-                    print(
-                        f"move command {round(face.normalised_x * face.delta_length,2)} {round(face.normalised_y * face.delta_length,2)}"
-                    )
-                    onvif_continuous_move(
-                        face.normalised_x * face.delta_length,
-                        face.normalised_y * face.delta_length,
-                        0,
-                    )
+                    if face.normalised_x > face.normalised_y:
+                        # Pan
+                        onvif_continuous_move(face.normalised_x, 0, 0)
+                        is_camera_moving_x = True
+                    else:
+                        # Tilt
+                        onvif_continuous_move(face.normalised_x, 0, 0)
+                        is_camera_moving_y = True
 
         face_overlay(frame, face_locations, face_names, target)
 
