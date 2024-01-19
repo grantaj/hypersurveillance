@@ -193,13 +193,6 @@ def face_detection(
         face.h = faces[0][3]
 
         face.normalise(frame)
-        # # normalise for centre of face
-        # face.face_centre_x = (face.x + (face.w/2)) / frame.shape[1]  # Divide by width
-        # face.face_centre_y = (face.y + (face.h/2)) / frame.shape[0]  # Divide by height
-
-        # # normalise for camera coords
-        # face.normalised_x = (face.face_centre_x - 0.5) * 2
-        # face.normalised_y = -(face.face_centre_y - 0.5) * 2
 
     return len(faces)
 
