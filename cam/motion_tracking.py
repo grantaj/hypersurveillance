@@ -291,14 +291,20 @@ def face_overlay(frame, face_locations, face_names, target):
 
 def face_recognition(
     freshcap,
-    known_face_encodings,
-    known_face_names,
+    shared_face_encodings,
+    shared_face_names,
+    lock,
     image_scale_down,
     sleep_duration_seconds,
     result_queue,
 ):
     while True:
         ret, frame = freshcap.read()
+
+        with lock:
+            known_face_encodings = shared_face_encodings[0]
+            known_face_names = shared_face_names[1]
+
         face_locations, face_names = facerecog.find_faces(
             frame, known_face_encodings, known_face_names, image_scale_down
         )
@@ -313,6 +319,12 @@ def face_recognition(
         result_queue.put((face_locations, face_names))
 
         time.sleep(sleep_duration_seconds)
+
+
+def update_parameter(new_value, param, lock):
+    with lock:
+        # Safely update the shared parameter
+        param[0] = new_value
 
 
 def get_latest_result(result_queue):
@@ -369,12 +381,16 @@ def main(mode):
     is_camera_moving_y = False
 
     result_queue = queue.Queue(maxsize=1)
+    param_lock = threading.Lock()
+    shared_face_encodings = [known_face_encodings]
+    shared_face_names = [known_face_names]
     thread = threading.Thread(
         target=face_recognition,
         args=(
             freshcap,
-            known_face_encodings,
-            known_face_names,
+            param_lock,
+            shared_face_encodings,
+            shared_face_names,
             image_scale_down,
             1.0 / face_detection_fps,
             result_queue,
