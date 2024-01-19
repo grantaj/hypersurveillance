@@ -1,5 +1,6 @@
 import cv2
 import time
+from datetime import datetime, timedelta
 import base64
 import hashlib
 import os
@@ -129,6 +130,7 @@ class Face:
         self.normalised_x : float = 0
         self.normalised_y : float = 0
         self.delta_length : float = 0
+        self.timeStamp = None
         pass
 
     def normalise(self, frame):
@@ -144,6 +146,12 @@ class Face:
         self.y = bottom
         self.w = right - left
         self.h = top - bottom
+        self.timeStamp = datetime.now()
+
+    def getElapsedTime(self):
+        if self.timeStamp is None:
+            return timedelta.max
+        return datetime.now() - self.timeStamp
 
 
 def face_detection(frame:np.ndarray, face_cascade:cv2.CascadeClassifier , face:Face) -> int:
