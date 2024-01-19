@@ -16,6 +16,7 @@ import threading
 import queue
 import tkinter as tk
 from tkinter import simpledialog
+import pyttsx3
 
 # from pythonosc import osc_message_builder
 # from pythonosc import udp_client
@@ -151,7 +152,21 @@ def onvif_stop():
 
     return requests.post(url, headers=headers, data=data)
 
+# speech
+def text_to_speech(text):
+    # Initialize the text-to-speech engine
+    engine = pyttsx3.init()
 
+    # Set properties (optional)
+    engine.setProperty('rate', 150)  # Speed of speech
+    engine.setProperty('volume', 1.0)  # Volume level (0.0 to 1.0)
+
+    # Convert the text to speech
+    engine.say(text)
+
+    # Wait for the speech to finish
+    engine.runAndWait()
+    
 ##########################################################################################
 # face detection
 
@@ -512,6 +527,8 @@ def main(mode):
             user_input = simpledialog.askstring("Input", "Enter something:")
             if user_input is None:
                 user_input = 'missing_name'
+            else:
+                text_to_speech(f"New target equired {user_input}")
             filename = user_input + ".png"
             print(filename)
             os.rename("new_frame.png", filename)
@@ -530,6 +547,7 @@ def main(mode):
             user_input = simpledialog.askstring("Input", "Enter something:")
             if user_input is not None:
                 target = user_input
+                text_to_speech(f"Changing target to {target}")
 
     # Release the webcam and close the window
     freshcap.release()
