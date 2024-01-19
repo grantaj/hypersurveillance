@@ -10,6 +10,7 @@ import math
 import numpy as np
 import pickle
 import face as facerecog
+from fresh import FreshestFrame
 
 # from pythonosc import osc_message_builder
 # from pythonosc import udp_client
@@ -206,7 +207,7 @@ def opencv_debug_overlay(frame:np.ndarray, face_count:int, face:Face):
         coor_str = f"x: {str(round(face.normalised_x,2))} y: {str(round(face.normalised_y,2))}"
         cv2.putText(frame, coor_str, (face.x, face.y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
-        
+
 def face_overlay(frame, face_locations, face_names, target):
 
     text_colour = (255, 255, 255)
@@ -230,16 +231,19 @@ def face_overlay(frame, face_locations, face_names, target):
 
 def main(mode):
 
+    filename = 0
+
     if mode == MODE_CAMERA:
         # Open the webcam (usually the default camera, 0)
-        cap = cv2.VideoCapture(0)
-
+        filename = 0
     elif mode == MODE_STREAM:
         # Open an RTSP stream
-        cap = cv2.VideoCapture(RTSP_URL)
+        filename = RTSP_URL
+    
+    # cap = cv2.VideoCapture(RTSP_URL) 
+    freshcap = FreshestFrame(filename)
 
-
-    if not cap.isOpened():
+    if not freshcap.isOpened():
         print("Error: Could not open cv2 stream")
         exit()
 
@@ -271,7 +275,7 @@ def main(mode):
         send_command_time_elapsed = time.time() - send_command_fps_prev
 
         # Read a frame from the webcam
-        ret, frame = cap.read()
+        ret, frame = freshcap.read()
         
 
         ##########
@@ -342,10 +346,11 @@ def main(mode):
             break
 
     # Release the webcam and close the window
-    cap.release()
+    freshcap.release()
     cv2.destroyAllWindows()
 
-main(MODE_STREAM)
+# MODE_CAMERA || MODE_STREAM
+main(MODE_CAMERA)
     
 # HELPFUL OSC CODE FOR FUTURE
 # Set up OSC client
