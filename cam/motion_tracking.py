@@ -23,7 +23,7 @@ import pyttsx3
 
 ##########################################################################################
 # network and onvif config (adjust as needed)
-CAMERA_IP = "192.168.0.100"
+CAMERA_IP = "192.168.1.157"
 CAMERA_USERNAME = "tapocam"
 CAMERA_PASSWORD = "password"
 CAMERA_PROFILE_TOKEN = "profile_1"
@@ -350,6 +350,9 @@ def get_latest_result(result_queue):
 
 
 def main(mode):
+
+    text_to_speech("welcome to hyper surveillance")
+
     webcam_index = 0
 
     if mode == MODE_CAMERA:
@@ -489,13 +492,13 @@ def main(mode):
 
                     if math.fabs(face.normalised_x) > math.fabs(face.normalised_y):
                         # Pan
-                        onvif_continuous_move(face.normalised_x / 10, 0, 0)
+                        onvif_continuous_move(face.normalised_x / 5, 0, 0)
                         is_camera_moving_x = True
                         is_camera_moving_y = False
                         print("x movement")
                     else:
                         # Tilt
-                        onvif_continuous_move(0, face.normalised_y / 10, 0)
+                        onvif_continuous_move(0, face.normalised_y / 5, 0)
                         is_camera_moving_y = True
                         is_camera_moving_x = False
                         print("y movement")
@@ -555,7 +558,7 @@ def main(mode):
 
 
 # MODE_CAMERA || MODE_STREAM
-main(MODE_CAMERA)
+main(MODE_STREAM)
 
 # HELPFUL OSC CODE FOR FUTURE
 # Set up OSC client
